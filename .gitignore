@@ -1,10 +1,21 @@
 __pycache__/
 *.py[cod]
+
+# Virtual environments - 'test/' is the one in this project's history.
 .venv/
 venv/
-.env*
-*.log
+test/
+env/
+
+.env
+.env.*
+!.env.example
+
 .pytest_cache/
 .idea/
 .vscode/
 
+# Eval logs are ignored by default, but the ones under logs/ are kept on
+# purpose: they are the evidence behind the numbers quoted in the README.
+*.log
+!logs/*.log

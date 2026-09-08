@@ -1,0 +1,25 @@
+ticket_id,text,sentiment,note
+SENT-001,What is the current version of Authentication Manager?,neutral,Plain version question. The SST-2 model calls this negative at 0.89 - the case that prompted this eval set.
+SENT-002,Can you send me the documentation for configuring an LDAP identity source?,neutral,"Documentation request, no tone either way."
+SENT-003,Which ports need to be open between the primary and the replica?,neutral,Configuration question.
+SENT-004,Please confirm the supported browsers for the Self-Service Console.,neutral,Compatibility question.
+SENT-005,Scheduling a maintenance window for next Tuesday at 22:00 UTC.,neutral,"Logistics, no sentiment."
+SENT-006,Attaching the diagnostic logs you requested.,neutral,Cooperative but not praise.
+SENT-007,Requesting a copy of the audit log export for Q3.,neutral,Routine request.
+SENT-008,"We need to add 2,000 users before Monday's launch. What is the fastest bulk import method?",neutral,Deadline pressure but no complaint - tests whether urgency is mistaken for negativity.
+SENT-009,Our security team flagged that the web tier certificate expires in six days.,neutral,"Serious content, neutral tone. Severity and sentiment are different axes."
+SENT-010,Logging yesterday's 20-minute authentication outage for the record. No action needed.,neutral,Reports a bad event calmly.
+SENT-011,"Intermittent Access Denied on first attempt for roughly 4 percent of users, succeeds on retry.",neutral,Factual defect report with no emotional language.
+SENT-012,This is the third time this week authentication has failed and nobody has called us back.,negative,Explicit complaint about responsiveness.
+SENT-013,Users cannot log in. Everything is down. We need someone on the phone now.,negative,Outage plus demand.
+SENT-014,The workaround you gave us made things worse and now the console will not load at all.,negative,Blames the provided fix.
+SENT-015,We have been waiting six days for an answer on this case and it is unacceptable.,negative,Direct dissatisfaction.
+SENT-016,Extremely frustrated with the lack of progress on this outage.,negative,States the emotion outright.
+SENT-017,Token codes keep getting rejected and our help desk is overwhelmed.,negative,Ongoing pain plus operational strain.
+SENT-018,The agent stopped working after patching and we have reinstalled twice with no luck.,negative,"AMBIGUOUS - factual report, but 'twice with no luck' carries fatigue. Reasonable people could label this neutral."
+SENT-019,"Slow logins in the Singapore office, 15 to 40 seconds, this is affecting productivity.",negative,"AMBIGUOUS - measured tone, but names business impact as a grievance."
+SENT-020,"Thank you, the fix worked perfectly and authentication is stable again.",positive,Clear thanks plus confirmation.
+SENT-021,"Great support on this one, the replication issue is fully resolved.",positive,Explicit praise.
+SENT-022,"Appreciate the quick turnaround, everything looks good now.",positive,Praise for speed.
+SENT-023,"The upgrade went smoothly, thanks for the detailed runbook.",positive,Praise for documentation.
+SENT-024,Closing this case. The root cause analysis was thorough and we are satisfied.,positive,Satisfied closure.

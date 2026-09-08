@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Support Ticket Intelligence</title>
+  <style>
+    :root{--bg:#07111f;--panel:rgba(15,28,48,.9);--border:rgba(148,163,184,.18);--text:#f8fafc;--muted:#9fb0c5;--primary:#4f8cff;--primary2:#7c5cff;--success:#34d399;--danger:#fb7185;--warning:#fbbf24;--radius:22px}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);background:radial-gradient(circle at 10% 15%,rgba(79,140,255,.18),transparent 28%),radial-gradient(circle at 90% 5%,rgba(124,92,255,.16),transparent 24%),linear-gradient(135deg,#050b14,#091729 55%,#07111f)}
+    .page{width:min(1180px,calc(100% - 32px));margin:auto;padding:34px 0 52px}.topbar{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:28px}.brand{display:flex;align-items:center;gap:14px}.logo{width:48px;height:48px;display:grid;place-items:center;border-radius:15px;background:linear-gradient(135deg,var(--primary),var(--primary2));font-weight:800;box-shadow:0 12px 35px rgba(79,140,255,.35)}h1{margin:0;font-size:clamp(1.25rem,2vw,1.75rem)}.brand p{margin:4px 0 0;color:var(--muted)}.status{display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid var(--border);border-radius:999px;background:rgba(15,23,42,.58);color:#cbd5e1}.dot{width:9px;height:9px;border-radius:50%;background:var(--success);box-shadow:0 0 0 6px rgba(52,211,153,.12)}
+    .hero,.card{border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);box-shadow:0 24px 70px rgba(0,0,0,.35);backdrop-filter:blur(16px)}.hero{padding:30px;margin-bottom:24px}.hero h2{margin:0 0 10px;font-size:clamp(1.7rem,3vw,2.7rem);line-height:1.08}.hero p{margin:0;color:var(--muted);line-height:1.7;max-width:800px}.layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(340px,.9fr);gap:24px;align-items:start}.form-card,.results{padding:26px}.results{position:sticky;top:22px}.card-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.card-header h3{margin:0}.step{padding:7px 11px;border-radius:999px;background:rgba(79,140,255,.12);color:#bcd3ff;font-size:.78rem;border:1px solid rgba(79,140,255,.25)}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.field{display:flex;flex-direction:column;gap:8px}.full{grid-column:1/-1}label{font-size:.88rem;font-weight:650;color:#dbe7f5}input,textarea,select{width:100%;color:var(--text);background:rgba(5,14,26,.72);border:1px solid rgba(148,163,184,.22);border-radius:13px;padding:13px 14px;font:inherit;outline:none}textarea{min-height:150px;resize:vertical;line-height:1.55}input:focus,textarea:focus,select:focus{border-color:rgba(79,140,255,.8);box-shadow:0 0 0 4px rgba(79,140,255,.12)}option{background:#0c1728}.actions{display:flex;gap:12px;margin-top:22px}button{border:0;border-radius:13px;padding:13px 18px;font:inherit;font-weight:750;cursor:pointer}.primary{flex:1;color:#fff;background:linear-gradient(135deg,var(--primary),var(--primary2))}.secondary{color:#d9e4f2;background:rgba(148,163,184,.1);border:1px solid var(--border)}button:disabled{opacity:.6;cursor:not-allowed}
+    .empty{text-align:center;color:var(--muted);padding:38px 18px}.result-grid{display:grid;gap:14px}.result-box{padding:17px;border-radius:16px;background:rgba(5,14,26,.58);border:1px solid var(--border)}.label{display:block;margin-bottom:8px;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;font-weight:750}.pill{display:inline-flex;padding:8px 11px;border-radius:999px;font-weight:750}.critical,.negative{background:rgba(251,113,133,.14);color:#fecdd3}.high{background:rgba(251,191,36,.14);color:#fde68a}.medium{background:rgba(79,140,255,.14);color:#bfdbfe}.low,.positive{background:rgba(52,211,153,.14);color:#bbf7d0}.neutral,.unknown{background:rgba(148,163,184,.14);color:#e2e8f0}.confidence{margin-top:10px}.confidence-row{display:flex;justify-content:space-between;margin-bottom:7px;color:var(--muted);font-size:.82rem}.bar{height:8px;border-radius:999px;background:rgba(148,163,184,.12);overflow:hidden}.bar div{height:100%;width:0;background:linear-gradient(90deg,var(--primary),var(--primary2));transition:width .5s}.summary{line-height:1.65;color:#dbe7f5}.error{display:none;margin-top:15px;padding:13px 14px;border-radius:13px;color:#fecdd3;background:rgba(190,24,93,.13);border:1px solid rgba(251,113,133,.25)}.footer{text-align:center;color:#71839a;margin-top:24px;font-size:.84rem}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.results{position:static}}@media(max-width:620px){.topbar{flex-direction:column;align-items:flex-start}.grid{grid-template-columns:1fr}.full{grid-column:auto}.actions{flex-direction:column}.hero,.form-card,.results{padding:20px}}
+  </style>
+  <style>
+    .warn{margin-top:15px;padding:13px 14px;border-radius:13px;color:#fde68a;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.28);display:none}
+    .reason{margin-top:9px;color:var(--muted);font-size:.85rem;line-height:1.5;word-break:break-word}
+    .hint{color:var(--muted);font-size:.78rem;margin-top:-2px}
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="topbar">
+    <div class="brand"><div class="logo">AI</div><div><h1>Support Ticket Intelligence</h1><p>Priority prediction, escalation judgement, sentiment, and summary</p></div></div>
+    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Checking API...</span></div>
+  </header>
+  <section class="hero">
+    <h2>Turn support tickets into actionable intelligence.</h2>
+    <p>Priority is predicted by a TF-IDF + logistic-regression model that scored 0.76 on held-out data, beating both a local Llama 3.2 and Claude Haiku on the same frozen rows. The LLM handles the question the classifier cannot answer: does a human need to look at this first?</p>
+  </section>
+  <section class="layout">
+    <form id="ticketForm" class="card form-card">
+      <div class="card-header"><h3>Ticket details</h3><span class="step">AI analysis</span></div>
+      <div class="grid">
+        <div class="field full"><label>Subject</label><input id="subject" name="subject" required placeholder="Production authentication failure"></div>
+        <div class="field full"><label>Description</label><textarea id="description" name="description" required placeholder="Describe the issue, impact, affected users, errors, and workaround..."></textarea></div>
+        <div class="field"><label>Category</label><select id="category" name="category" required></select></div>
+        <div class="field"><label>Environment</label><select id="environment" name="environment" required></select></div>
+        <div class="field"><label>Channel</label><select id="channel" name="channel" required></select></div>
+        <div class="field"><label>Region</label><select id="region" name="region" required></select></div>
+        <div class="field"><label>Customer tier</label><select id="customer_tier" name="customer_tier" required></select></div>
+        <div class="field">
+          <label>Escalation check</label>
+          <select id="escalation_provider" name="escalation_provider">
+            <option value="none">Skip</option>
+            <option value="anthropic">Claude Haiku</option>
+            <option value="ollama">Local Llama 3.2</option>
+          </select>
+          <span class="hint">Needs a key or Ollama running. Failures escalate.</span>
+        </div>
+      </div>
+      <div class="actions"><button type="button" class="secondary" id="sample">Use sample</button><button type="submit" class="primary" id="analyze">Analyze ticket</button></div>
+      <div id="error" class="error"></div>
+    </form>
+    <aside class="card results">
+      <div class="card-header"><h3>AI analysis</h3><span class="step">Live results</span></div>
+      <div id="empty" class="empty">Your results will appear here after you submit a ticket.</div>
+      <div id="results" class="result-grid" hidden>
+        <div class="result-box">
+          <span class="label">Predicted priority</span><span id="priority" class="pill">-</span>
+          <div class="confidence"><div class="confidence-row"><span>Confidence</span><span id="pconf">0%</span></div><div class="bar"><div id="pbar"></div></div></div>
+          <div id="unknownWarn" class="warn"></div>
+        </div>
+        <div class="result-box" id="escBox" hidden>
+          <span class="label">Escalation</span><span id="escalate" class="pill">-</span>
+          <div id="escReason" class="reason"></div>
+        </div>
+        <div class="result-box">
+          <span class="label">Sentiment</span><span id="sentiment" class="pill">-</span>
+          <div class="confidence"><div class="confidence-row"><span>Confidence</span><span id="sconf">0%</span></div><div class="bar"><div id="sbar"></div></div></div>
+          <div id="sscores" class="reason"></div>
+        </div>
+        <div class="result-box"><span class="label">Summary</span><div id="summary" class="summary">-</div></div>
+      </div>
+    </aside>
+  </section>
+  <footer class="footer">FastAPI + scikit-learn + Hugging Face + Ollama / Anthropic</footer>
+</main>
+<script>
+const form = document.getElementById('ticketForm');
+const error = document.getElementById('error');
+const btn = document.getElementById('analyze');
+
+const pct = v => Math.max(0, Math.min(100, (Number(v) || 0) * 100));
+
+function pill(el, text) {
+  el.textContent = text || 'Unknown';
+  el.className = 'pill ' + String(text || 'unknown').toLowerCase();
+}
+
+function pillAs(el, text, cls) {
+  el.textContent = text;
+  el.className = 'pill ' + cls;
+}
+
+/* Dropdown options come from GET /schema, which reads them straight off
+   the fitted OneHotEncoder. Hard-coding them here once meant the form
+   offered values the model had never seen ("QA", "Portal", "Basic");
+   because the encoder ignores unknown values instead of raising, those
+   tickets got a quietly different answer with no warning. */
+async function loadSchema() {
+  const response = await fetch('/schema');
+  if (!response.ok) throw new Error('/schema returned ' + response.status);
+  const schema = await response.json();
+
+  for (const [field, values] of Object.entries(schema)) {
+    const el = document.getElementById(field);
+    if (!el) continue;
+    el.innerHTML = '<option value="">Select</option>' +
+      values.map(v => '<option>' + v + '</option>').join('');
+  }
+}
+
+async function loadHealth() {
+  const text = document.getElementById('statusText');
+  const dot = document.getElementById('statusDot');
+  try {
+    const response = await fetch('/health');
+    if (response.status === 503) {
+      text.textContent = 'Model not trained';
+      dot.style.background = 'var(--danger)';
+      return;
+    }
+    const health = await response.json();
+    const trained = health.trained_at ? health.trained_at.slice(0, 10) : 'unknown date';
+    text.textContent = 'Model trained ' + trained;
+  } catch (err) {
+    text.textContent = 'API unreachable';
+    dot.style.background = 'var(--danger)';
+  }
+}
+
+/* FastAPI returns validation failures as a JSON `detail` array. Read the
+   body once as text, then try to parse it - a failed parse still leaves
+   the raw body to show, instead of an unhelpful "request failed". */
+async function readError(response, name) {
+  const raw = await response.text();
+  let detail = raw.slice(0, 300);
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed.detail)) {
+      detail = parsed.detail
+        .map(d => (d.loc || []).slice(1).join('.') + ': ' + d.msg)
+        .join('; ');
+    } else if (parsed.detail) {
+      detail = parsed.detail;
+    }
+  } catch (err) { /* not JSON - keep the raw body */ }
+  return name + ' (' + response.status + '): ' + detail;
+}
+
+/* Clear the panel before every submit. Without this, a failed request
+   leaves the previous ticket's numbers on screen next to an error
+   message, which reads as "the prediction did not change" rather than
+   "the prediction never happened". */
+function resetResults(message) {
+  const empty = document.getElementById('empty');
+  document.getElementById('results').hidden = true;
+  document.getElementById('escBox').hidden = true;
+  document.getElementById('unknownWarn').style.display = 'none';
+  empty.hidden = false;
+  empty.textContent = message;
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  error.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Analyzing...';
+  resetResults('Analyzing...');
+
+  const data = Object.fromEntries(new FormData(form).entries());
+  const text = data.subject + '. ' + data.description;
+
+  try {
+    /* Priority goes to POST /triage with a JSON body - a long
+       description in a query string can exceed URL length limits and is
+       written to access logs in plaintext. Sentiment and summary are
+       still GET; they take short text and were not part of the change. */
+    const [triage, sentiment, summary] = await Promise.all([
+      fetch('/triage', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+      }),
+      fetch('/analyze-sentiment?' + new URLSearchParams({text})),
+      fetch('/summarize-ticket?' + new URLSearchParams({text: data.description}))
+    ]);
+
+    if (!triage.ok) throw new Error(await readError(triage, '/triage'));
+    if (!sentiment.ok) throw new Error(await readError(sentiment, '/analyze-sentiment'));
+    if (!summary.ok) throw new Error(await readError(summary, '/summarize-ticket'));
+
+    const triageData = await triage.json();
+    const sentimentRaw = await sentiment.json();
+    const summaryData = await summary.json();
+    const sentimentData = Array.isArray(sentimentRaw) ? sentimentRaw[0] : sentimentRaw;
+
+    const priorityConfidence = pct(triageData.confidence);
+    pill(document.getElementById('priority'), triageData.priority);
+    document.getElementById('pconf').textContent = priorityConfidence.toFixed(1) + '%';
+    document.getElementById('pbar').style.width = priorityConfidence + '%';
+
+    /* The API reports any field whose value the model has never seen,
+       rather than letting the prediction silently degrade. */
+    const warn = document.getElementById('unknownWarn');
+    if (triageData.unknown_fields && triageData.unknown_fields.length) {
+      warn.textContent = 'Ignored by the model (value not in its training data): ' +
+        triageData.unknown_fields.join(', ') + '. This prediction is less reliable.';
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+    }
+
+    const escBox = document.getElementById('escBox');
+    if (triageData.escalate === null || triageData.escalate === undefined) {
+      escBox.hidden = true;
+    } else {
+      escBox.hidden = false;
+      if (triageData.escalate) {
+        pillAs(document.getElementById('escalate'), 'Send to a human', 'critical');
+      } else {
+        pillAs(document.getElementById('escalate'), 'Handle automatically', 'low');
+      }
+      const reason = document.getElementById('escReason');
+      reason.textContent = 'Reason: ' + (triageData.escalation_reason || 'unknown') +
+        (triageData.escalation_detail ? ' - ' + triageData.escalation_detail : '');
+    }
+
+    const sentimentConfidence = pct(sentimentData.confidence);
+    pill(document.getElementById('sentiment'), sentimentData.label);
+    document.getElementById('sconf').textContent = sentimentConfidence.toFixed(1) + '%';
+    document.getElementById('sbar').style.width = sentimentConfidence + '%';
+
+    /* Show every class score, not just the winner. A two-class model has
+       to put a neutral question somewhere, so it reports a confident
+       NEGATIVE; seeing "neutral 71 / negative 22 / positive 7" makes the
+       difference between a real signal and a forced choice visible. */
+    const scores = sentimentData.scores || {};
+    document.getElementById('sscores').textContent =
+      Object.entries(scores)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, value]) => name + ' ' + (value * 100).toFixed(0) + '%')
+        .join('   ·   ');
+
+    document.getElementById('summary').textContent = summaryData.summary || 'No summary generated.';
+
+    document.getElementById('empty').hidden = true;
+    document.getElementById('results').hidden = false;
+  } catch (err) {
+    error.textContent = err.message;
+    error.style.display = 'block';
+    resetResults('Your results will appear here after you submit a ticket.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Analyze ticket';
+  }
+});
+
+document.getElementById('sample').onclick = () => {
+  document.getElementById('subject').value = 'Production authentication failure';
+  document.getElementById('description').value = 'Multiple users cannot authenticate in the production environment after a network configuration change. Users receive timeout errors. A temporary workaround is available, but it is slow and supports only a limited number of users. The issue is significantly affecting normal business operations.';
+  document.getElementById('category').value = 'Authentication';
+  document.getElementById('environment').value = 'Production';
+  document.getElementById('channel').value = 'Email';
+  document.getElementById('region').value = 'Middle East';
+  document.getElementById('customer_tier').value = 'Enterprise';
+};
+
+loadHealth();
+loadSchema().catch(err => {
+  error.textContent = 'Could not load field options from the model: ' + err.message +
+    '. Make sure the API is running and the model has been trained.';
+  error.style.display = 'block';
+});
+</script>
+</body>
+</html>

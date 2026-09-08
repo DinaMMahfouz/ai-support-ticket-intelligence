@@ -4,6 +4,7 @@ pandas
 numpy
 joblib
 scikit-learn
-transformers
+# Pinned: transformers 5.x removed the summarization pipeline this project uses.
+transformers>=4.45,<5
 torch
-
+pydantic
