@@ -1,3 +1,13 @@
+"""
+Summarization Using HF Distilbert, Analysis of a Support Ticket.
+
+This module only loads pre-trained files - it never trains anything. If
+the artifacts are missing, run:
+
+    python summarization_train.py
+"""
+
+
 from transformers import pipeline
 
 
