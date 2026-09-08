@@ -32,9 +32,13 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
-
-from ticket_intelligence.priority_features import CATEGORICAL_COLUMNS, METRICS_PATH, MODEL_PATH
+from ticket_intelligence.api_models import (
+    MODEL_VOCABULARY,
+    EscalationProvider,
+    TriageRequest,
+    TriageResponse
+)
+from ticket_intelligence.priority_features import METRICS_PATH, MODEL_PATH
 from ticket_intelligence.priority_service import model, predict_priority
 from ticket_intelligence.sentiment_service import analyze_sentiment
 from ticket_intelligence.summarization_service import summarize_ticket
@@ -63,75 +67,6 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"]
 )
-
-
-class TriageRequest(BaseModel):
-    """One ticket to triage. Sent as a JSON body, not a query string."""
-
-    subject: str = Field(min_length=1)
-    description: str = Field(min_length=1)
-    category: str
-    environment: str
-    channel: str
-    region: str
-    customer_tier: str
-
-    # Which provider, if any, is asked for an escalation judgment.
-    # Defaults to "none" so the endpoint works with no Ollama running
-    # and no API key set - the classical prediction never depends on a
-    # provider being reachable.
-    escalation_provider: str = "none"
-
-
-class TriageResponse(BaseModel):
-    priority: str
-    confidence: float
-    unknown_fields: list[str] = []
-    escalate: bool | None = None
-    escalation_reason: str | None = None
-    escalation_detail: str | None = None
-
-
-def model_vocabulary() -> dict:
-    """
-    The exact values the fitted OneHotEncoder was trained on, per
-    categorical column.
-
-    Read from the encoder itself rather than written out by hand, so a
-    retrain that changes the label space can never leave a stale copy
-    behind in the UI or in this file. The model is the single source of
-    truth for what it accepts.
-    """
-
-    encoder = model.named_steps["preprocessor"].named_transformers_["categorical"]
-
-    return {
-        column: list(values)
-        for column, values in zip(CATEGORICAL_COLUMNS, encoder.categories_)
-    }
-
-
-def find_unknown_fields(payload: dict) -> list:
-    """
-    Names the categorical fields whose submitted value the model has
-    never seen.
-
-    The pipeline uses OneHotEncoder(handle_unknown="ignore"), which
-    encodes an unrecognised value as all-zeros and raises nothing. That
-    is the right behaviour for a batch scoring job - one odd row
-    shouldn't halt 2,400 - but at request time it means a caller can
-    submit "QA" for environment, get a confidently different answer,
-    and never learn that the field was silently discarded. Reporting it
-    back turns a silent degradation into a visible one.
-    """
-
-    vocabulary = model_vocabulary()
-
-    return [
-        column
-        for column, allowed in vocabulary.items()
-        if payload.get(column) not in allowed
-    ]
 
 
 def _assess_fn(provider: str):
@@ -183,7 +118,7 @@ def schema_endpoint():
     silently produced degraded predictions for any ticket using them.
     """
 
-    return model_vocabulary()
+    return MODEL_VOCABULARY
 
 
 @app.get("/health")
@@ -246,8 +181,6 @@ def triage_endpoint(request: TriageRequest):
     that never returns a valid judgment.
     """
 
-    ticket = request.model_dump()
-
     result = predict_priority(
         subject=request.subject,
         description=request.description,
@@ -258,23 +191,16 @@ def triage_endpoint(request: TriageRequest):
         customer_tier=request.customer_tier
     )
 
-    unknown_fields = find_unknown_fields(ticket)
-    if unknown_fields:
-        logger.warning(
-            "triage received values outside the model's vocabulary: %s", unknown_fields
-        )
-
     response = TriageResponse(
         priority=result["priority"],
-        confidence=result["confidence"],
-        unknown_fields=unknown_fields
+        confidence=result["confidence"]
     )
 
     assess_fn = _assess_fn(request.escalation_provider)
     if assess_fn is None:
         logger.info(
-            "triage priority=%s confidence=%.4f escalation=skipped unknown=%s",
-            response.priority, response.confidence, unknown_fields
+            "triage priority=%s confidence=%.4f escalation=skipped",
+            response.priority, response.confidence
         )
         return response
 
@@ -300,9 +226,9 @@ def triage_endpoint(request: TriageRequest):
         response.escalation_detail = str(exc)
 
     logger.info(
-        "triage priority=%s confidence=%.4f escalate=%s reason=%s provider=%s unknown=%s",
+        "triage priority=%s confidence=%.4f escalate=%s reason=%s provider=%s",
         response.priority, response.confidence, response.escalate,
-        response.escalation_reason, request.escalation_provider, unknown_fields
+        response.escalation_reason, request.escalation_provider
     )
 
     return response

@@ -70,7 +70,8 @@ So the LLM path was rebuilt around escalation:
 | File | Job |
 |---|---|
 | `llm/escalation_llm.py` / `escalation_llm_anthropic.py` | Ask the model (local Ollama, or Claude Haiku) |
-| `llm/llm_validation.py` | Validate the answer with Pydantic, retry if malformed |
+| `llm/llm_validation.py` | Validate the escalation answer, retry if malformed |
+| `llm/priority_validation.py` | Validate the priority answer, retry with the error fed back, fail closed |
 | `llm/escalation_policy.py` | Decide what to *do* with the answer |
 | `evaluation/escalation_eval_runner.py` | Score it against 18 hand-written hard cases |
 | `evaluation/guardrail_hallucination_test.py` | Check the model is not inventing details |
@@ -120,6 +121,9 @@ python -m evaluation.eval_runner --model llm-ollama    --set llm_sample   # need
 python -m evaluation.escalation_eval_runner --model both
 python -m evaluation.sentiment_eval_runner  --model both
 python -m evaluation.guardrail_hallucination_test --model both
+
+python -m evaluation.threshold_sweep --model anthropic   # escalation tradeoff curve
+python -m evaluation.threshold_sweep --model stub        # harness check, no provider
 ```
 
 For the Anthropic paths, copy `.env.example` to `.env` and add your key.
@@ -143,7 +147,7 @@ Interactive docs at <http://127.0.0.1:8000/docs>.
 
 `/triage` takes a JSON body rather than query parameters, so a long ticket description never travels in a URL where it would hit length limits and be written to access logs in plaintext.
 
-`/schema` exists because the web form used to hard-code its dropdown options, and four of them were values the model had never seen. The encoder ignores unknown values silently, so those tickets got a quietly different answer with no warning. The page now builds its dropdowns from this endpoint, and `/triage` reports any unrecognised field back in `unknown_fields`.
+`/schema` exists because the web form used to hard-code its dropdown options, and four of them were values the model had never seen. The encoder ignores unknown values silently, so those tickets got a quietly different answer with no warning — changing `environment` from `Production` to an unknown value moved the sample ticket from High 0.83 to Medium 0.57, with nothing to indicate it. The page now builds its dropdowns from this endpoint, and the request model's fields are enums derived from the fitted encoder, so an unknown value is a 422 rather than a degraded answer.
 
 ---
 
@@ -154,6 +158,8 @@ ticket_intelligence/          importable code
 ├── app.py                    FastAPI routes only, no model logic
 ├── priority_features.py      shared paths, columns, data loading
 ├── priority_service.py       loads the trained model and predicts
+├── api_models.py             request/response models, enums built from the model
+├── guardrails.py             invented-detail detector
 ├── sentiment_service.py      three-class sentiment
 ├── summarization_service.py  DistilBART summarisation
 └── llm/
@@ -161,7 +167,8 @@ ticket_intelligence/          importable code
     ├── priority_llm_anthropic.py     priority via Claude Haiku
     ├── escalation_llm.py             escalation via Ollama
     ├── escalation_llm_anthropic.py   escalation via Claude Haiku
-    ├── llm_validation.py             Pydantic validation + retry
+    ├── llm_validation.py             escalation validation + retry
+    ├── priority_validation.py        priority validation, retry, fail closed
     └── escalation_policy.py          model answer -> system decision
 
 scripts/                      run by hand
@@ -173,6 +180,7 @@ evaluation/                   every number in this README comes from here
 ├── eval_runner.py                    priority, any predictor
 ├── escalation_eval_runner.py         escalation judgement
 ├── sentiment_eval_runner.py          sentiment, old model vs new
+├── threshold_sweep.py                confidence -> escalation tradeoff curve
 └── guardrail_hallucination_test.py   invented-detail screen
 
 static/index.html             the web interface
@@ -180,8 +188,39 @@ assets/                       screenshots used in this README
 data/                         frozen datasets, never overwritten in place
 models/                       trained model, label encoder, metrics
 logs/                         raw benchmark output
+tests/                        provider-free by default, `-m llm` for the rest
 docs/INTERVIEW_NOTES.md       why each decision was made
 ```
+
+---
+
+## Guardrails and tests
+
+Three claims this project makes, and where each one is enforced.
+
+**LLM output is validated, and failure is closed.** Every priority prediction is parsed through a Pydantic model — `priority` is an enum of exactly the four labels, `confidence` a float in [0, 1], `reasoning` a non-empty string. On a validation failure the provider is called once more with the error fed back, then it raises. It never falls back to a default label: a silently defaulted prediction is worse than a refusal, because it enters the metrics as a real answer. The parse-failure rate is counted and reported.
+
+**Confidence drives escalation, and the tradeoff is measured.** `evaluation/threshold_sweep.py` scores the rule "escalate below threshold T" against the 18 hard cases and sweeps T from 0.50 to 0.90:
+
+```bash
+python -m evaluation.threshold_sweep --model anthropic
+python -m evaluation.threshold_sweep --model stub      # no provider needed
+```
+
+It reports correct escalations, **missed escalations** (confident on a case that needed a human — the dangerous class), and the over-escalation rate, against the two baselines: never-escalate misses all 6, always-escalate catches all 6 while being wrong on all 12 others.
+
+It also prints a **length-confound check**. If the system escalates HARD-018 — the calm security question — that could mean it understood the security implication, or just that short tickets get low confidence. Those look identical in the metrics and are entirely different capabilities. The Spearman correlation between description length and confidence says which one you are looking at.
+
+**Invented details are detected, not just prohibited.** `ticket_intelligence/guardrails.py` compares generated text against the ticket it was shown and flags version numbers, case IDs, dates, multi-digit counts and named systems that appear in the output but not the input. It is a screen, not a proof — it will miss an invented *cause* stated in ordinary prose — and the docstring says so.
+
+### Running the tests
+
+```bash
+pytest                 # provider-free: schema, retry contract, detector, request validation
+pytest -m llm          # adds the bait-ticket tests; needs Ollama or an API key
+```
+
+The split is deliberate. A guardrail test that only runs when someone remembers to start Ollama is a script, not a guardrail — so everything enforceable without a provider is in the default selection, needing neither an API key nor `transformers`. That also makes the suite CI-ready; a workflow is not wired up yet.
 
 ---
 
@@ -199,9 +238,11 @@ Replacing it with a three-class model fixed that specific failure — the same q
 
 What is *not* fixed is the framing. Tone and severity are different axes: "our certificate expires in six days" is calmly worded and operationally urgent. A sentiment model measures the axis that matters less. The useful signal for triage would be customer frustration, which is a different label space and a different model.
 
-**The escalation path is built but not yet benchmarked here.** The code and runner exist; the numbers are not recorded in this README yet.
+**The escalation numbers are not in this README yet.** The harness and the threshold sweep exist and run; the results of a real provider run are not recorded here.
 
-**There are no unit tests yet.** The eval harnesses check model behaviour, not code behaviour.
+**Confidence is self-reported, not calibrated.** The threshold sweep treats an LLM's own confidence float as a signal. It is not a probability, and the length-confound check exists precisely because it may be measuring something other than certainty.
+
+**No CI, no auth, no container.** The test suite is written to run without a provider, but no CI workflow is committed. The API has no authentication or rate limiting, and there is no Dockerfile. This runs on a laptop; it is not deployed and is not claimed to be.
 
 **Only 240 rows in the LLM comparison.** The classical model scores 2,400 rows in under a second; the LLM path takes several seconds per ticket. 240 stratified rows keeps the comparison runnable while giving each class 50–70 examples. Do not read anything into the second decimal place.
 

@@ -33,6 +33,10 @@ import urllib.error
 import urllib.request
 
 from ticket_intelligence.priority_features import PRIORITY_LABELS, TARGET_COLUMN, sample_few_shot_rows
+from ticket_intelligence.llm.priority_validation import (
+    ProviderParseError,
+    validate_priority_with_retry
+)
 
 OLLAMA_HOST = "http://localhost:11434"
 MODEL_NAME = "llama3.2:latest"
@@ -42,7 +46,7 @@ RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "priority": {"type": "string", "enum": PRIORITY_LABELS},
-        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "reasoning": {"type": "string"}
     },
     "required": ["priority", "confidence", "reasoning"]
@@ -111,7 +115,7 @@ def _build_few_shot_messages() -> list:
         )
         assistant_content = json.dumps({
             "priority": row[TARGET_COLUMN],
-            "confidence": "high",
+            "confidence": 0.9,
             "reasoning": f"Historical training example labeled {row[TARGET_COLUMN]}."
         })
 
@@ -140,28 +144,64 @@ def predict_priority_llm(
     Predict priority for a ticket using a local Ollama model.
 
     Returns the same {"priority": ...} key as
-    priority_service.predict_priority, plus "confidence" and "reasoning"
-    fields the classical model has no equivalent of.
+    priority_service.predict_priority, plus a "confidence" float in
+    [0, 1] and a "reasoning" string the classical model has no
+    equivalent of.
+
+    Every response is validated against PriorityResponse with one
+    error-feedback retry, and fails closed - see priority_validation.py.
     """
+
+    return validate_priority_with_retry(
+        lambda correction: _call_ollama_raw(
+            subject, description, category, environment,
+            channel, region, customer_tier, correction
+        )
+    )
+
+
+def _call_ollama_raw(
+    subject: str,
+    description: str,
+    category: str,
+    environment: str,
+    channel: str,
+    region: str,
+    customer_tier: str,
+    correction: str = None
+) -> dict:
+    """
+    One Ollama request, returning the parsed content with no validation.
+
+    `correction` carries the validation error from a rejected previous
+    answer. It is appended as an extra user turn rather than edited
+    into the system prompt, so the model sees its own bad answer's
+    problem in conversational position - which is what makes a retry
+    different from re-rolling the same dice.
+
+    Raises RuntimeError if Ollama is unreachable (network, never
+    retried) and ProviderParseError if a response came back in the
+    wrong shape (retried once).
+    """
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *FEW_SHOT_MESSAGES,
+        {
+            "role": "user",
+            "content": _build_user_message(
+                subject, description, category,
+                environment, channel, region, customer_tier
+            )
+        }
+    ]
+
+    if correction:
+        messages.append({"role": "user", "content": correction})
 
     payload = {
         "model": MODEL_NAME,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *FEW_SHOT_MESSAGES,
-            {
-                "role": "user",
-                "content": _build_user_message(
-                    subject,
-                    description,
-                    category,
-                    environment,
-                    channel,
-                    region,
-                    customer_tier
-                )
-            }
-        ],
+        "messages": messages,
         "stream": False,
         "format": RESPONSE_SCHEMA
     }
@@ -182,11 +222,14 @@ def predict_priority_llm(
             f"Original error: {exc}"
         ) from exc
 
-    content = body["message"]["content"]
-    parsed = json.loads(content)
+    try:
+        content = body["message"]["content"]
+    except (KeyError, TypeError) as exc:
+        raise ProviderParseError(f"Unexpected Ollama response shape: {body}") from exc
 
-    return {
-        "priority": parsed["priority"],
-        "confidence": parsed["confidence"],
-        "reasoning": parsed["reasoning"]
-    }
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ProviderParseError(
+            f"Ollama response content was not valid JSON: {content!r}"
+        ) from exc

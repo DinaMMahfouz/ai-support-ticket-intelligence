@@ -35,6 +35,10 @@ import urllib.error
 import urllib.request
 
 from ticket_intelligence.priority_features import PRIORITY_LABELS, TARGET_COLUMN, load_env, sample_few_shot_rows
+from ticket_intelligence.llm.priority_validation import (
+    ProviderParseError,
+    validate_priority_with_retry
+)
 
 load_env()
 
@@ -50,7 +54,7 @@ RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
         "priority": {"type": "string", "enum": PRIORITY_LABELS},
-        "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "reasoning": {"type": "string"}
     },
     "required": ["priority", "confidence", "reasoning"]
@@ -137,6 +141,36 @@ def predict_priority_llm_anthropic(
     plus "confidence" and "reasoning".
     """
 
+    return validate_priority_with_retry(
+        lambda correction: _call_anthropic_raw(
+            subject, description, category, environment,
+            channel, region, customer_tier, correction
+        )
+    )
+
+
+def _call_anthropic_raw(
+    subject: str,
+    description: str,
+    category: str,
+    environment: str,
+    channel: str,
+    region: str,
+    customer_tier: str,
+    correction: str = None
+) -> dict:
+    """
+    One Anthropic request, returning the tool_use input with no
+    validation.
+
+    `correction` carries the validation error from a rejected previous
+    answer and is appended as an extra user turn, matching how
+    priority_llm.py does it so the two providers retry identically.
+
+    Raises RuntimeError for network or HTTP failures (never retried),
+    ProviderParseError for a malformed response (retried once).
+    """
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError(
@@ -144,24 +178,24 @@ def predict_priority_llm_anthropic(
             "repo root (ANTHROPIC_API_KEY=...) or export it in your shell."
         )
 
+    messages = [
+        {
+            "role": "user",
+            "content": _build_ticket_text(
+                subject, description, category,
+                environment, channel, region, customer_tier
+            )
+        }
+    ]
+
+    if correction:
+        messages.append({"role": "user", "content": correction})
+
     payload = {
         "model": MODEL_NAME,
         "max_tokens": MAX_TOKENS,
         "system": SYSTEM_PROMPT,
-        "messages": [
-            {
-                "role": "user",
-                "content": _build_ticket_text(
-                    subject,
-                    description,
-                    category,
-                    environment,
-                    channel,
-                    region,
-                    customer_tier
-                )
-            }
-        ],
+        "messages": messages,
         "tools": TOOLS,
         "tool_choice": {"type": "tool", "name": TOOL_NAME}
     }
@@ -184,18 +218,13 @@ def predict_priority_llm_anthropic(
         error_body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Anthropic API returned {exc.code}: {error_body}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(
-            f"Could not reach the Anthropic API. Original error: {exc}"
-        ) from exc
+        raise RuntimeError(f"Could not reach the Anthropic API. Original error: {exc}") from exc
 
-    tool_use_blocks = [block for block in body["content"] if block.get("type") == "tool_use"]
+    tool_use_blocks = [b for b in body.get("content", []) if b.get("type") == "tool_use"]
     if not tool_use_blocks:
-        raise RuntimeError(f"No tool_use block in Anthropic response: {body}")
+        raise ProviderParseError(f"No tool_use block in Anthropic response: {body}")
 
-    parsed = tool_use_blocks[0]["input"]
-
-    return {
-        "priority": parsed["priority"],
-        "confidence": parsed["confidence"],
-        "reasoning": parsed["reasoning"]
-    }
+    try:
+        return tool_use_blocks[0]["input"]
+    except KeyError as exc:
+        raise ProviderParseError(f"Malformed tool_use block: {tool_use_blocks[0]}") from exc

@@ -8,3 +8,6 @@ scikit-learn
 transformers>=4.45,<5
 torch
 pydantic
+
+# Tests. The default selection needs no provider and no transformers.
+pytest
